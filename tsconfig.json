@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "@tracer/core": ["./packages/core/src"],
+      "@tracer/core/*": ["./packages/core/src/*"],
+      "@tracer/db": ["./packages/db/src"],
+      "@tracer/db/*": ["./packages/db/src/*"],
+      "@tracer/infra": ["./packages/infra/src"],
+      "@tracer/infra/*": ["./packages/infra/src/*"],
+      "@tracer/router": ["./packages/router/src"],
+      "@tracer/router/*": ["./packages/router/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "**/dist", "**/node_modules"]
+}
