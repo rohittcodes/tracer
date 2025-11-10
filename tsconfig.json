@@ -22,7 +22,9 @@
       "@tracer/infra": ["./packages/infra/src"],
       "@tracer/infra/*": ["./packages/infra/src/*"],
       "@tracer/router": ["./packages/router/src"],
-      "@tracer/router/*": ["./packages/router/src/*"]
+      "@tracer/router/*": ["./packages/router/src/*"],
+      "@tracer/sdk": ["./packages/sdk/src"],
+      "@tracer/sdk/*": ["./packages/sdk/src/*"]
     }
   },
   "exclude": ["node_modules", "dist", "**/dist", "**/node_modules"]

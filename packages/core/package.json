@@ -8,10 +8,12 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint .",
-    "test": "echo \"No tests yet\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.8"
   }
 }

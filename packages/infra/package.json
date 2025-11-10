@@ -13,5 +13,8 @@
   },
   "devDependencies": {
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@tracer/core": "workspace:*"
   }
 }

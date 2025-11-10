@@ -1,1 +1,14 @@
 export * from './db';
+export { getPool } from './db';
+export * from './schema';
+export * from './repositories/logs';
+export * from './repositories/metrics';
+export * from './repositories/alerts';
+export * from './repositories/users';
+export * from './repositories/projects';
+export * from './repositories/api-keys';
+export * from './repositories/alert-channels';
+export * from './repositories/traces';
+export * from './setup-indexes';
+export * from './notification-listener';
+export { like, or, and, gte, lte, eq, desc, asc, inArray, not, sql } from 'drizzle-orm';

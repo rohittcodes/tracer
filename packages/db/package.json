@@ -8,10 +8,26 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint .",
-    "test": "echo \"No tests yet\"",
-    "clean": "rm -rf dist"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "@types/bcrypt": "^6.0.0",
+    "@types/pg": "^8.15.6",
+    "dotenv": "^17.2.3",
+    "drizzle-kit": "^0.31.6",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.8"
+  },
+  "dependencies": {
+    "@tracer/core": "workspace:*",
+    "bcrypt": "^6.0.0",
+    "drizzle-orm": "^0.44.7",
+    "pg": "^8.16.3"
   }
 }

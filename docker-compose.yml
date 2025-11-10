@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: tracer-postgres
+    environment:
+      POSTGRES_USER: tracer
+      POSTGRES_PASSWORD: tracer_dev_password
+      POSTGRES_DB: tracer
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tracer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tracer-network
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: tracer-api
+    environment:
+      DATABASE_URL: postgresql://tracer:tracer_dev_password@postgres:5432/tracer
+      API_PORT: 3000
+      NODE_ENV: production
+      LOG_LEVEL: info
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX: 100
+      CORS_ORIGIN: http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - tracer-network
+    restart: unless-stopped
+
+  processor:
+    build:
+      context: .
+      dockerfile: apps/processor/Dockerfile
+    container_name: tracer-processor
+    environment:
+      DATABASE_URL: postgresql://tracer:tracer_dev_password@postgres:5432/tracer
+      NODE_ENV: production
+      LOG_LEVEL: info
+      # Optional: Alert channels
+      # SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      # RESEND_API_KEY: ${RESEND_API_KEY}
+      # RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
+      # COMPOSIO_API_KEY: ${COMPOSIO_API_KEY}
+      # COMPOSIO_USER_ID: ${COMPOSIO_USER_ID}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - tracer-network
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: tracer-web
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:3000
+      NODE_ENV: production
+    ports:
+      - "3001:3001"
+    depends_on:
+      - api
+    networks:
+      - tracer-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  tracer-network:
+    driver: bridge

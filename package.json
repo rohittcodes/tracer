@@ -8,17 +8,32 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
-    "test": "turbo run test",
-    "clean": "turbo run clean"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
+    "clean": "turbo run clean",
+    "db:start": "docker-compose pull postgres && docker-compose up -d postgres",
+    "db:stop": "docker-compose down",
+    "db:reset": "docker-compose pull postgres && docker-compose down -v && docker-compose up -d postgres",
+    "db:logs": "docker-compose logs -f postgres",
+    "db:debug": "tsx scripts/debug-db.ts",
+    "db:push": "pnpm --filter @tracer/db db:push",
+    "db:generate": "pnpm --filter @tracer/db db:generate",
+    "db:migrate": "pnpm --filter @tracer/db db:migrate",
+    "db:studio": "pnpm --filter @tracer/db db:studio",
+    "example:express": "pnpm --filter @tracer/express-example dev"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.18.2",
   "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vitest/ui": "^4.0.8",
+    "tsx": "^4.0.0",
     "turbo": "^2.0.0",
     "typescript": "^5.0.0",
-    "tsx": "^4.0.0",
-    "@types/node": "^20.0.0"
+    "vitest": "^4.0.8"
   }
 }
