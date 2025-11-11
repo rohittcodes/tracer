@@ -39,13 +39,45 @@ if (existsSync(envPath)) {
   logger.warn({ path: envPath }, 'Env file not found. Make sure DATABASE_URL is set in your environment or create a .env file in the project root.');
 }
 
-const logRepository = new LogRepository();
-const metricRepository = new MetricRepository();
-const alertRepository = new AlertRepository();
-const channelRepository = new AlertChannelRepository();
-const apiKeyRepository = new ApiKeyRepository();
-const projectRepository = new ProjectRepository();
-const userRepository = new UserRepository();
+// Initialize repositories - use process.nextTick to defer until after module loading
+let logRepository: LogRepository;
+let metricRepository: MetricRepository;
+let alertRepository: AlertRepository;
+let channelRepository: AlertChannelRepository;
+let apiKeyRepository: ApiKeyRepository;
+let projectRepository: ProjectRepository;
+let userRepository: UserRepository;
+let alertHandler: AlertHandler;
+let notificationListener: NotificationListener;
+
+// Defer repository instantiation to avoid module loading issues with tsx
+process.nextTick(() => {
+  try {
+    logRepository = new LogRepository();
+    metricRepository = new MetricRepository();
+    alertRepository = new AlertRepository();
+    channelRepository = new AlertChannelRepository();
+    apiKeyRepository = new ApiKeyRepository();
+    projectRepository = new ProjectRepository();
+    userRepository = new UserRepository();
+
+    alertHandler = new AlertHandler(
+      alertRepository,
+      channelRepository,
+      apiKeyRepository,
+      projectRepository,
+      userRepository,
+      apiKey,
+      userId,
+      toolkits
+    );
+
+    notificationListener = new NotificationListener(logRepository);
+  } catch (error) {
+    logger.error({ error }, 'Failed to initialize repositories');
+    process.exit(1);
+  }
+});
 
 const aggregator = new MetricAggregator(DEFAULT_METRIC_WINDOW_SECONDS);
 const detector = new AnomalyDetector();
@@ -53,20 +85,6 @@ const detector = new AnomalyDetector();
 const apiKey = process.env.COMPOSIO_API_KEY || '';
 const userId = process.env.COMPOSIO_USER_ID || 'tracer-system';
 const toolkits = (process.env.COMPOSIO_TOOLKITS || 'slack').split(',');
-
-const alertHandler = new AlertHandler(
-  alertRepository,
-  channelRepository,
-  apiKeyRepository,
-  projectRepository,
-  userRepository,
-  apiKey,
-  userId,
-  toolkits
-);
-
-// Real-time notification listener (replaces polling)
-const notificationListener = new NotificationListener(logRepository);
 
 // Metric aggregation interval (for finalizing completed windows)
 const METRIC_AGGREGATION_INTERVAL = DEFAULT_METRIC_WINDOW_SECONDS * 1000;
@@ -168,6 +186,11 @@ async function catchUpOnMissedLogs() {
 
 async function initialize() {
   logger.info('Initializing processor...');
+
+  // Wait for repositories to be initialized
+  while (!logRepository || !alertHandler || !notificationListener) {
+    await new Promise(resolve => setImmediate(resolve));
+  }
 
   await setupTimescaleDB();
 

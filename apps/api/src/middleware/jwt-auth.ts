@@ -3,7 +3,14 @@ import jwt from 'jsonwebtoken';
 import { UserRepository } from '@tracer/db';
 import { logger } from '../logger';
 
-const userRepository = new UserRepository();
+// Use a getter to defer instantiation and avoid module loading issues
+let _userRepository: UserRepository | null = null;
+function getUserRepository(): UserRepository {
+  if (!_userRepository) {
+    _userRepository = new UserRepository();
+  }
+  return _userRepository;
+}
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 export interface JWTPayload {
@@ -52,7 +59,7 @@ export async function requireAuth(c: Context<{ Variables: Variables }>, next: Ne
   }
 
   // Fetch user to ensure they still exist
-  const user = await userRepository.findById(payload.userId);
+  const user = await getUserRepository().findById(payload.userId);
   if (!user) {
     return c.json({ error: 'User not found' }, 401);
   }
@@ -76,7 +83,7 @@ export async function optionalAuth(c: Context<{ Variables: Variables }>, next: N
       const payload = verifyToken(token);
       
       if (payload) {
-        const user = await userRepository.findById(payload.userId);
+        const user = await getUserRepository().findById(payload.userId);
         if (user) {
           c.set('user', {
             id: user.id,

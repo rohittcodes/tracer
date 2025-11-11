@@ -5,7 +5,15 @@ import { logger } from '../logger';
 import { z } from 'zod';
 
 const auth = new Hono<{ Variables: Variables }>();
-const userRepository = new UserRepository();
+
+// Use a getter to defer instantiation and avoid module loading issues
+let _userRepository: UserRepository | null = null;
+function getUserRepository(): UserRepository {
+  if (!_userRepository) {
+    _userRepository = new UserRepository();
+  }
+  return _userRepository;
+}
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -23,7 +31,7 @@ auth.post('/register', async (c) => {
     const body = await c.req.json();
     const validated = registerSchema.parse(body);
 
-    const user = await userRepository.create({
+    const user = await getUserRepository().create({
       email: validated.email,
       password: validated.password,
       name: validated.name,
@@ -59,12 +67,12 @@ auth.post('/login', async (c) => {
     const body = await c.req.json();
     const validated = loginSchema.parse(body);
 
-    const user = await userRepository.findByEmail(validated.email);
+    const user = await getUserRepository().findByEmail(validated.email);
     if (!user) {
       return c.json({ error: 'Invalid email or password' }, 401);
     }
 
-    const isValid = await userRepository.verifyPassword(user, validated.password);
+    const isValid = await getUserRepository().verifyPassword(user, validated.password);
     if (!isValid) {
       return c.json({ error: 'Invalid email or password' }, 401);
     }

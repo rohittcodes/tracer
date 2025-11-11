@@ -1,6 +1,11 @@
 import { config } from 'dotenv';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import express, { Request, Response, NextFunction } from 'express';
+
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Load .env from express-example directory first, then fallback to root
 config({ path: resolve(__dirname, '../.env') });
