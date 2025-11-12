@@ -92,6 +92,8 @@ const METRIC_AGGREGATION_INTERVAL = DEFAULT_METRIC_WINDOW_SECONDS * 1000;
 // Service downtime check interval
 const DOWNTIME_CHECK_INTERVAL = 60000; // Check every minute
 
+const ALERT_DEDUPE_WINDOW_MS = 8000; // 5-second window + clock skew safety
+
 // Track processed log IDs to avoid duplicates during startup catch-up
 // Limit size to prevent memory leak (keep last 10k IDs)
 const MAX_PROCESSED_LOG_IDS = 10000;
@@ -268,39 +270,33 @@ async function processAlert(alert: Alert, checkDuplicates: boolean = false) {
       }
     }
 
-    // Check for duplicate active alerts of the same type for the same service
+    let alertId: number | undefined;
+    let dedupeOutcome: 'created' | 'updated' | 'skipped' | undefined;
+
     if (checkDuplicates) {
-      const activeAlerts = await alertRepository.getActiveAlerts(alert.service);
-      const activeAlertsArray = await activeAlerts;
-      const duplicate = activeAlertsArray.find(
-        a => a.alertType === alert.alertType && a.service === alert.service
-      );
-      
-      if (duplicate) {
-        // Update existing alert if severity increased
-        if (getSeverityLevel(alert.severity) > getSeverityLevel(duplicate.severity)) {
-          // Update the existing alert with new severity and message
-          await alertRepository.update(duplicate.id, {
-            severity: alert.severity,
-            message: alert.message,
-            resolved: false,
-            resolvedAt: undefined,
-          });
-          logger.info({ alertId: duplicate.id, severity: alert.severity }, 'Updated existing alert with higher severity');
-          
-          // Re-send the updated alert
-          const updatedAlert = { ...alert, id: duplicate.id };
-          eventBus.emitAlertTriggered(updatedAlert);
-          await alertHandler.sendAlert(alert, duplicate.id).catch((error) => {
-            logger.warn({ error, alertId: duplicate.id }, 'Failed to send updated alert to channels');
-          });
-        }
-        // Duplicate alert (same or lower severity), skip creating new one
+      const dedupeKey = buildAlertDedupeKey(alert);
+      const result = await alertRepository.insertWithDedupe(alert, dedupeKey, ALERT_DEDUPE_WINDOW_MS);
+
+      dedupeOutcome = result.outcome;
+      alertId = result.alertId;
+
+      if (dedupeOutcome === 'skipped' || !alertId) {
         return;
       }
+
+      if (dedupeOutcome === 'updated') {
+        logger.info({ alertId, severity: alert.severity }, 'Updated existing alert with higher severity');
+      }
+    } else {
+      alertId = await alertRepository.insert(alert);
+      dedupeOutcome = 'created';
     }
 
-    const alertId = await alertRepository.insert(alert);
+    if (!alertId) {
+      logger.warn({ alertType: alert.alertType, service: alert.service }, 'Alert processing completed without alertId');
+      return;
+    }
+
     const alertWithId = { ...alert, id: alertId };
 
     eventBus.emitAlertTriggered(alertWithId);
@@ -316,18 +312,9 @@ async function processAlert(alert: Alert, checkDuplicates: boolean = false) {
   }
 }
 
-// Helper to compare severity levels
-function getSeverityLevel(severity: string): number {
-  const levels: Record<string, number> = {
-    low: 1,
-    medium: 2,
-    high: 3,
-    critical: 4,
-  };
-  if (!severity || typeof severity !== 'string') {
-    return 0;
-  }
-  return levels[severity.toLowerCase()] || 0;
+function buildAlertDedupeKey(alert: Alert): string {
+  const projectKey = alert.projectId !== undefined && alert.projectId !== null ? alert.projectId.toString() : 'global';
+  return `${alert.service}|${projectKey}|${alert.alertType}`;
 }
 
 function checkServiceDowntime() {
