@@ -38,4 +38,3 @@ pnpm-debug.log*
 *.tsbuildinfo
 
 docs/
-.snapshots/
