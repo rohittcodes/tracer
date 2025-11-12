@@ -12,8 +12,3 @@ export const ALERT_RETRY_ATTEMPTS = 3;
 export const DEFAULT_TRACE_SAMPLE_RATE = 1.0; // 100% by default (no sampling)
 export const TRACE_SAMPLE_RATE_ERROR = 1.0; // Always sample errors
 
-// Alert deduplication configuration
-export const ALERT_DEDUP_WINDOW_SECONDS = 5; // 5-second deduplication window
-export const ALERT_DEDUP_CLOCK_SKEW_SECONDS = 3; // Handle up to 3s clock skew
-export const ALERT_DEDUP_MAX_RETRIES = 3; // Maximum retry attempts
-export const ALERT_DEDUP_RETRY_BASE_MS = 50; // Base delay for exponential backoff

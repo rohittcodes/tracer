@@ -52,13 +52,11 @@ export const alerts = pgTable('alerts', {
   toolRouterSessionId: varchar('tool_router_session_id', { length: 255 }),
   alertSent: boolean('alert_sent').notNull().default(false),
   lastSentAt: timestamp('last_sent_at', { withTimezone: true }), // For rate limiting
-  timeBucket: bigint('time_bucket', { mode: 'number' }).notNull(), // For deduplication
 }, (table) => ({
   serviceResolvedCreatedIdx: index('alerts_service_resolved_created_idx').on(table.service, table.resolved, table.createdAt.desc()),
   createdAtIdx: index('alerts_created_at_idx').on(table.createdAt.desc()),
   resolvedSeverityIdx: index('alerts_resolved_severity_idx').on(table.resolved, table.severity),
   projectIdIdx: index('alerts_project_id_idx').on(table.projectId),
-  dedupIdx: index('alerts_dedup_idx').on(table.service, table.alertType, table.timeBucket).where(eq(table.resolved, false)),
 }));
 
 export const users = pgTable('users', {

@@ -146,7 +146,7 @@ async function processLog(log: LogEntry, logId?: number): Promise<void> {
     // This checks metrics and creates alerts based on thresholds
     const immediateAlerts = detector.detectAnomalies(realTimeMetrics);
     for (const alert of immediateAlerts) {
-      await processAlert(alert); // Deduplication handled automatically
+      await processAlert(alert, true); // Check for duplicates
     }
   } catch (error) {
     logger.error({ error, service: log.service }, 'Error processing log');
@@ -249,7 +249,7 @@ async function processCompletedMetrics() {
   const alerts = detector.detectAnomalies(completedMetrics);
 
   for (const alert of alerts) {
-    processAlert(alert); // Deduplication handled automatically
+    processAlert(alert, true); // Check for duplicates
   }
 }
 
@@ -268,28 +268,40 @@ async function processAlert(alert: Alert, checkDuplicates: boolean = false) {
       }
     }
 
-    // Use atomic deduplication with upsert (ignore the checkDuplicates parameter)
-    // The new method always performs deduplication
-    const { id: alertId, isDuplicate } = await alertRepository.insertWithDeduplication(alert);
-    
-    if (isDuplicate) {
-      logger.debug({ 
-        service: alert.service, 
-        alertType: alert.alertType,
-        alertId 
-      }, 'Duplicate alert detected and merged');
+    // Check for duplicate active alerts of the same type for the same service
+    if (checkDuplicates) {
+      const activeAlerts = await alertRepository.getActiveAlerts(alert.service);
+      const activeAlertsArray = await activeAlerts;
+      const duplicate = activeAlertsArray.find(
+        a => a.alertType === alert.alertType && a.service === alert.service
+      );
       
-      // For duplicates, severity update is handled automatically in the upsert logic
-      return;
+      if (duplicate) {
+        // Update existing alert if severity increased
+        if (getSeverityLevel(alert.severity) > getSeverityLevel(duplicate.severity)) {
+          // Update the existing alert with new severity and message
+          await alertRepository.update(duplicate.id, {
+            severity: alert.severity,
+            message: alert.message,
+            resolved: false,
+            resolvedAt: undefined,
+          });
+          logger.info({ alertId: duplicate.id, severity: alert.severity }, 'Updated existing alert with higher severity');
+          
+          // Re-send the updated alert
+          const updatedAlert = { ...alert, id: duplicate.id };
+          eventBus.emitAlertTriggered(updatedAlert);
+          await alertHandler.sendAlert(alert, duplicate.id).catch((error) => {
+            logger.warn({ error, alertId: duplicate.id }, 'Failed to send updated alert to channels');
+          });
+        }
+        // Duplicate alert (same or lower severity), skip creating new one
+        return;
+      }
     }
 
-    // New alert created successfully
+    const alertId = await alertRepository.insert(alert);
     const alertWithId = { ...alert, id: alertId };
-    logger.info({ 
-      alertId, 
-      service: alert.service, 
-      alertType: alert.alertType 
-    }, 'New alert created');
 
     eventBus.emitAlertTriggered(alertWithId);
 
@@ -300,14 +312,7 @@ async function processAlert(alert: Alert, checkDuplicates: boolean = false) {
       // Alert is still stored, just not sent
     });
   } catch (error) {
-    logger.error({ 
-      error, 
-      alertType: alert.alertType, 
-      service: alert.service 
-    }, 'Failed to process alert');
-    
-    // Don't throw to prevent crashing the processor
-    // The alert might be processed by another processor or on retry
+    logger.error({ error, alertType: alert.alertType, service: alert.service }, 'Failed to process alert');
   }
 }
 
