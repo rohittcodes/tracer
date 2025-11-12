@@ -6,6 +6,7 @@ import { LogEntry, BATCH_INSERT_SIZE, DEFAULT_METRIC_WINDOW_SECONDS, Alert, Metr
 import { LogRepository, MetricRepository, AlertRepository, AlertChannelRepository, ApiKeyRepository, ProjectRepository, UserRepository, setupTimescaleDB, NotificationListener } from '@tracer/db';
 import { MetricAggregator } from './aggregator';
 import { AnomalyDetector } from './anomaly-detector';
+import { StatisticalAnomalyDetector } from './statistical-anomaly-detector';
 import { AlertHandler } from './alert-handler';
 import { logger } from './logger';
 
@@ -82,6 +83,26 @@ process.nextTick(() => {
 const aggregator = new MetricAggregator(DEFAULT_METRIC_WINDOW_SECONDS);
 const detector = new AnomalyDetector();
 
+// Initialize statistical anomaly detector with default configuration
+// This runs alongside the threshold-based detector for comparison and gradual migration
+const statisticalDetector = new StatisticalAnomalyDetector({
+  zScoreThreshold: 3.0,
+  minDataPoints: 30,
+  baselineWindowMinutes: 60,
+  rateOfChangeThreshold: 0.5,
+  rateOfChangeWindowMinutes: 5,
+  emaSmoothingFactor: 0.3,
+  useMAD: false,
+  sensitivity: 0.7,
+});
+
+// Feature flag for statistical detection rollout
+// 0.0 = disabled, 1.0 = fully enabled
+const STATISTICAL_DETECTION_ROLLOUT = parseFloat(process.env.STATISTICAL_DETECTION_ROLLOUT || '0.0');
+
+// Enable statistical detection logging for monitoring
+const ENABLE_STATISTICAL_LOGGING = process.env.ENABLE_STATISTICAL_LOGGING === 'true';
+
 const apiKey = process.env.COMPOSIO_API_KEY || '';
 const userId = process.env.COMPOSIO_USER_ID || 'tracer-system';
 const toolkits = (process.env.COMPOSIO_TOOLKITS || 'slack').split(',');
@@ -147,6 +168,49 @@ async function processLog(log: LogEntry, logId?: number): Promise<void> {
     const immediateAlerts = detector.detectAnomalies(realTimeMetrics);
     for (const alert of immediateAlerts) {
       await processAlert(alert, true); // Check for duplicates
+    }
+
+    // Statistical anomaly detection (runs in parallel for comparison)
+    // Gradual rollout based on STATISTICAL_DETECTION_ROLLOUT percentage
+    const enableStatisticalDetection = Math.random() < STATISTICAL_DETECTION_ROLLOUT;
+    
+    if (enableStatisticalDetection) {
+      try {
+        const statisticalAlerts = statisticalDetector.processLog(log);
+        
+        // Log statistical detection results for monitoring
+        if (ENABLE_STATISTICAL_LOGGING && statisticalAlerts.length > 0) {
+          logger.info({
+            service: log.service,
+            alertCount: statisticalAlerts.length,
+            alerts: statisticalAlerts.map(a => ({
+              type: a.alertType,
+              severity: a.severity,
+              zScore: a.metadata?.zScore,
+            })),
+          }, 'Statistical anomaly detection triggered');
+        }
+        
+        // Process statistical alerts (currently in shadow mode - just log)
+        // TODO: Enable processing when ready for production rollout
+        for (const alert of statisticalAlerts) {
+          // await processAlert(alert, true); // Uncomment to enable
+          
+          // For now, just emit events for comparison
+          if (ENABLE_STATISTICAL_LOGGING) {
+            eventBus.emitMetricAggregated({
+              service: log.service,
+              metricType: MetricType.THROUGHPUT,
+              value: statisticalAlerts.length,
+              windowStart: log.timestamp,
+              windowEnd: new Date(),
+            });
+          }
+        }
+      } catch (error) {
+        logger.error({ error, service: log.service }, 'Error in statistical anomaly detection');
+        // Don't fail the entire log processing if statistical detection fails
+      }
     }
   } catch (error) {
     logger.error({ error, service: log.service }, 'Error processing log');
