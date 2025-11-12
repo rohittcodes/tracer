@@ -125,6 +125,12 @@ async function processLog(log: LogEntry, logId?: number): Promise<void> {
     // Update service activity tracking
     detector.updateServiceActivity(log.service, log.timestamp);
 
+    // Statistical anomaly detection directly on the streaming log
+    const errorAlerts = detector.observeLog(log);
+    for (const alert of errorAlerts) {
+      await processAlert(alert, true);
+    }
+
     // Process log and get real-time metrics
     const realTimeMetrics = aggregator.processLog(log);
 
@@ -142,8 +148,7 @@ async function processLog(log: LogEntry, logId?: number): Promise<void> {
       }
     }
 
-    // Immediate anomaly detection on log arrival
-    // This checks metrics and creates alerts based on thresholds
+    // Immediate anomaly detection based on derived metrics (e.g., latency)
     const immediateAlerts = detector.detectAnomalies(realTimeMetrics);
     for (const alert of immediateAlerts) {
       await processAlert(alert, true); // Check for duplicates
