@@ -59,15 +59,6 @@ export const alerts = pgTable('alerts', {
   projectIdIdx: index('alerts_project_id_idx').on(table.projectId),
 }));
 
-export const alertDedupe = pgTable('alert_dedupe', {
-  dedupeKey: varchar('dedupe_key', { length: 512 }).primaryKey(),
-  alertId: bigint('alert_id', { mode: 'number' }).references(() => alerts.id, { onDelete: 'cascade' }),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (table) => ({
-  expiresAtIdx: index('alert_dedupe_expires_at_idx').on(table.expiresAt),
-}));
-
 export const users = pgTable('users', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
   email: varchar('email', { length: 255 }).notNull().unique(),
@@ -178,8 +169,6 @@ export type Metric = typeof metrics.$inferSelect;
 export type NewMetric = typeof metrics.$inferInsert;
 export type Alert = typeof alerts.$inferSelect;
 export type NewAlert = typeof alerts.$inferInsert;
-export type AlertDedupe = typeof alertDedupe.$inferSelect;
-export type NewAlertDedupe = typeof alertDedupe.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Project = typeof projects.$inferSelect;
@@ -192,3 +181,4 @@ export type Trace = typeof traces.$inferSelect;
 export type NewTrace = typeof traces.$inferInsert;
 export type Span = typeof spans.$inferSelect;
 export type NewSpan = typeof spans.$inferInsert;
+
