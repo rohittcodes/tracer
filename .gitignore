@@ -37,5 +37,11 @@ pnpm-debug.log*
 # TypeScript
 *.tsbuildinfo
 
+# Build outputs (should only be in dist/)
+**/src/**/*.js
+**/src/**/*.d.ts
+**/src/**/*.js.map
+**/src/**/*.d.ts.map
+
 docs/
 .snapshots/
