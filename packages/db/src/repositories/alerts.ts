@@ -1,13 +1,13 @@
 import { eq, and, desc, gte } from 'drizzle-orm';
-import { getDb, getPool } from '../db';
-import { alerts, NewAlert, type Alert as DbAlert } from '../schema';
-import { Alert as CoreAlert } from '@tracer/core';
+import { getDb } from '../db';
+import { alerts, NewAlert } from '../schema';
+import { Alert } from '@tracer/core';
 
 export class AlertRepository {
   /**
    * Insert a new alert
    */
-  async insert(alert: CoreAlert): Promise<number> {
+  async insert(alert: Alert): Promise<number> {
     const db = getDb();
     const newAlert: NewAlert = {
       projectId: alert.projectId || null,
@@ -28,46 +28,6 @@ export class AlertRepository {
   }
 
   /**
-   * Returns the current timestamp from the database server.
-   * Using server time avoids skew between processors.
-   */
-  async getServerTimestamp(): Promise<Date> {
-    const pool = getPool();
-    const result = await pool.query<{ now: Date | string }>('SELECT NOW() AS now');
-    const raw = result.rows[0]?.now;
-    if (!raw) {
-      throw new Error('Failed to fetch server timestamp');
-    }
-    return raw instanceof Date ? raw : new Date(raw);
-  }
-
-  /**
-   * Return the most recent active alert for a service/type within a time window.
-   */
-  async getRecentActiveAlert(
-    service: string,
-    alertType: CoreAlert['alertType'],
-    since: Date
-  ): Promise<DbAlert | null> {
-    const db = getDb();
-    const matches = await db
-      .select()
-      .from(alerts)
-      .where(
-        and(
-          eq(alerts.service, service),
-          eq(alerts.alertType, alertType as any),
-          eq(alerts.resolved, false),
-          gte(alerts.createdAt, since)
-        )
-      )
-      .orderBy(desc(alerts.createdAt))
-      .limit(1);
-
-    return matches.length > 0 ? matches[0] : null;
-  }
-
-  /**
    * Update alert resolved status
    */
   async updateResolved(id: number, resolved: boolean): Promise<void> {
@@ -84,7 +44,7 @@ export class AlertRepository {
   /**
    * Update alert with new data (for severity/message updates)
    */
-  async update(id: number, data: Partial<Pick<CoreAlert, 'severity' | 'message' | 'resolved' | 'resolvedAt'>>): Promise<void> {
+  async update(id: number, data: Partial<Pick<Alert, 'severity' | 'message' | 'resolved' | 'resolvedAt'>>): Promise<void> {
     const db = getDb();
     const updateData: any = {};
     if (data.severity !== undefined) updateData.severity = data.severity;
