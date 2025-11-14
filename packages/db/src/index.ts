@@ -12,3 +12,4 @@ export * from './repositories/traces';
 export * from './setup-indexes';
 export * from './notification-listener';
 export { like, or, and, gte, lte, eq, desc, asc, inArray, not, sql } from 'drizzle-orm';
+export * from './utils/advisory-lock';

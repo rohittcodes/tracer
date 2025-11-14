@@ -3,7 +3,7 @@ import { resolve } from 'path';
 import { existsSync } from 'fs';
 import { eventBus } from '@tracer/infra';
 import { LogEntry, BATCH_INSERT_SIZE, DEFAULT_METRIC_WINDOW_SECONDS, Alert, MetricType, AlertType, Severity } from '@tracer/core';
-import { LogRepository, MetricRepository, AlertRepository, AlertChannelRepository, ApiKeyRepository, ProjectRepository, UserRepository, setupTimescaleDB, NotificationListener } from '@tracer/db';
+import { LogRepository, MetricRepository, AlertRepository, AlertChannelRepository, ApiKeyRepository, ProjectRepository, UserRepository, setupTimescaleDB, NotificationListener, acquireAdvisoryLock, releaseAdvisoryLock, type AdvisoryLockHandle } from '@tracer/db';
 import { MetricAggregator } from './aggregator';
 import { AnomalyDetector } from './anomaly-detector';
 import { AlertHandler } from './alert-handler';
@@ -91,6 +91,9 @@ const METRIC_AGGREGATION_INTERVAL = DEFAULT_METRIC_WINDOW_SECONDS * 1000;
 
 // Service downtime check interval
 const DOWNTIME_CHECK_INTERVAL = 60000; // Check every minute
+
+// Duplicate suppression window for alerts (milliseconds)
+const ALERT_DEDUPE_WINDOW_MS = 5000;
 
 // Track processed log IDs to avoid duplicates during startup catch-up
 // Limit size to prevent memory leak (keep last 10k IDs)
@@ -253,7 +256,13 @@ async function processCompletedMetrics() {
   }
 }
 
+function getAlertLockKey(alert: Alert): string {
+  return `alert:${alert.service}:${alert.alertType}`;
+}
+
 async function processAlert(alert: Alert, checkDuplicates: boolean = false) {
+  let alertLock: AdvisoryLockHandle | null = null;
+
   try {
     // Try to resolve projectId from service if not already set
     if (!alert.projectId) {
@@ -268,36 +277,56 @@ async function processAlert(alert: Alert, checkDuplicates: boolean = false) {
       }
     }
 
-    // Check for duplicate active alerts of the same type for the same service
     if (checkDuplicates) {
-      const activeAlerts = await alertRepository.getActiveAlerts(alert.service);
-      const activeAlertsArray = await activeAlerts;
-      const duplicate = activeAlertsArray.find(
-        a => a.alertType === alert.alertType && a.service === alert.service
+      const lockKey = getAlertLockKey(alert);
+      alertLock = await acquireAdvisoryLock(lockKey);
+
+      const serverTimestamp = await alertRepository.getServerTimestamp();
+      const windowStart = new Date(serverTimestamp.getTime() - ALERT_DEDUPE_WINDOW_MS);
+
+      let duplicate = await alertRepository.getRecentActiveAlert(
+        alert.service,
+        alert.alertType,
+        windowStart
       );
-      
+
+      if (!duplicate) {
+        const activeAlerts = await alertRepository.getActiveAlerts(alert.service);
+        duplicate = activeAlerts.find(
+          (a) => a.alertType === alert.alertType && a.service === alert.service
+        ) || null;
+      }
+
       if (duplicate) {
-        // Update existing alert if severity increased
-        if (getSeverityLevel(alert.severity) > getSeverityLevel(duplicate.severity)) {
-          // Update the existing alert with new severity and message
+        const newSeverityLevel = getSeverityLevel(alert.severity);
+        const existingSeverityLevel = getSeverityLevel(duplicate.severity);
+
+        if (newSeverityLevel > existingSeverityLevel) {
           await alertRepository.update(duplicate.id, {
             severity: alert.severity,
             message: alert.message,
             resolved: false,
             resolvedAt: undefined,
           });
-          logger.info({ alertId: duplicate.id, severity: alert.severity }, 'Updated existing alert with higher severity');
-          
-          // Re-send the updated alert
-          const updatedAlert = { ...alert, id: duplicate.id };
+          logger.info(
+            { alertId: duplicate.id, severity: alert.severity },
+            'Updated existing alert with higher severity'
+          );
+
+          const updatedAlert = { ...alert, id: duplicate.id, createdAt: duplicate.createdAt };
           eventBus.emitAlertTriggered(updatedAlert);
           await alertHandler.sendAlert(alert, duplicate.id).catch((error) => {
             logger.warn({ error, alertId: duplicate.id }, 'Failed to send updated alert to channels');
           });
         }
-        // Duplicate alert (same or lower severity), skip creating new one
         return;
       }
+
+      alert.createdAt = serverTimestamp;
+    }
+
+    if (!alert.createdAt) {
+      alert.createdAt = new Date();
     }
 
     const alertId = await alertRepository.insert(alert);
@@ -305,14 +334,19 @@ async function processAlert(alert: Alert, checkDuplicates: boolean = false) {
 
     eventBus.emitAlertTriggered(alertWithId);
 
-    // Try to send alert, but don't fail if sending fails
-    // Alert is already stored in database
     await alertHandler.sendAlert(alert, alertId).catch((error) => {
       logger.warn({ error, alertId }, 'Failed to send alert to channels');
-      // Alert is still stored, just not sent
     });
   } catch (error) {
     logger.error({ error, alertType: alert.alertType, service: alert.service }, 'Failed to process alert');
+  } finally {
+    if (alertLock) {
+      try {
+        await releaseAdvisoryLock(alertLock);
+      } catch (lockError) {
+        logger.warn({ lockError, service: alert.service, alertType: alert.alertType }, 'Failed to release alert dedupe lock');
+      }
+    }
   }
 }
 
